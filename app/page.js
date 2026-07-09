@@ -35,6 +35,7 @@ const MARKUP = `
       </div>
     </div>
     <div class="spacer"></div>
+    <button type="button" id="refreshBtn" class="refresh">↻ 更新</button>
     <div class="live"><span class="d"></span><span id="liveTxt">読み込み中…</span></div>
   </section>
 
@@ -344,10 +345,13 @@ function boot() {
   async function load(dateStr) {
     setDateLabel(dateStr);
     $("liveTxt").textContent = "更新中…";
+    const btn = $("refreshBtn");
+    if (btn) btn.disabled = true;
     loadWeather(dateStr);
     try {
-      const reqs = [fetch(`/api/occupancy?date=${dateStr}&range=${mode}`).then((r) => r.json())];
-      if (mode === "week") reqs.push(fetch(`/api/weather?date=${dateStr}&range=week`).then((r) => r.json()).catch(() => null));
+      const bust = `&_=${Date.now()}`; // CDNキャッシュを回避して常に最新を取得
+      const reqs = [fetch(`/api/occupancy?date=${dateStr}&range=${mode}${bust}`, { cache: "no-store" }).then((r) => r.json())];
+      if (mode === "week") reqs.push(fetch(`/api/weather?date=${dateStr}&range=week${bust}`, { cache: "no-store" }).then((r) => r.json()).catch(() => null));
       const [d, wx] = await Promise.all(reqs);
       if (d.error) throw new Error(d.error);
       if (mode === "week" && wx && wx.daily) { d.weather = {}; wx.daily.forEach((x) => { d.weather[x.date] = x; }); }
@@ -358,6 +362,8 @@ function boot() {
     } catch (e) {
       $("liveTxt").textContent = "取得エラー";
       $("chartHost").innerHTML = `<div class="state err">データ取得に失敗しました：${e.message}</div>`;
+    } finally {
+      if (btn) btn.disabled = false;
     }
   }
 
@@ -375,8 +381,10 @@ function boot() {
     load(pick.value);
   });
 
+  $("refreshBtn").addEventListener("click", () => load(pick.value));
+
   load(pick.value);
-  timers.push(setInterval(() => { if (pick.value === jstTodayStr()) load(pick.value); }, 180000));
+  timers.push(setInterval(() => { if (pick.value === jstTodayStr()) load(pick.value); }, 60000));
 
   const mo = new MutationObserver(() => { if (current) { if (current.mode === "week") renderWeekChart(current); else renderChart(current); } });
   mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });

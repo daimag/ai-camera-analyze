@@ -68,7 +68,7 @@ async function fetchCamera(headers, cam, start, end, interval) {
   return { in: ti, out: to, buckets };
 }
 
-const CACHE = { headers: { "Cache-Control": "s-maxage=180, stale-while-revalidate=600" } };
+const CACHE = { headers: { "Cache-Control": "no-store, max-age=0" } };
 
 // 日単位（時間帯別）
 async function getDay(headers, date) {
