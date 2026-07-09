@@ -90,7 +90,8 @@ svg{display:block;width:100%;height:auto;min-width:520px}
 .ent{display:flex;flex-direction:column;gap:12px;margin-top:14px}
 .row{display:grid;grid-template-columns:150px 1fr auto;align-items:center;gap:12px}
 .row .nm{font-size:13px;font-weight:600}
-.row .nm b{display:block;font-size:11px;color:var(--warn);font-weight:700}
+.row .nm b{display:block;font-size:11px;color:var(--warn);font-weight:700;margin-left:15px}
+.cdot{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:6px;vertical-align:middle}
 .bar{height:22px;background:var(--panel-2);border-radius:6px;overflow:hidden;border:1px solid var(--line)}
 .bar>i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--stay))}
 .row .v{font-size:14px;font-weight:700;min-width:96px;text-align:right}

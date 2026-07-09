@@ -34,8 +34,9 @@ const MARKUP = `
     <div class="chip seg-chip">
       <span class="k">表示単位</span>
       <div class="seg" id="modeSeg">
-        <button type="button" data-mode="day" class="on">日（時間帯）</button>
-        <button type="button" data-mode="week">週（曜日別）</button>
+        <button type="button" data-mode="day" class="on">日</button>
+        <button type="button" data-mode="week">週</button>
+        <button type="button" data-mode="month">月</button>
       </div>
     </div>
     <div class="spacer"></div>
@@ -165,6 +166,21 @@ function boot() {
   let current = null;
   let mode = "day";
   const timers = [];
+  // カメラ別の色（入店総数の多い順＝立体駐車場を緑に）
+  const CAM_COLORS = ["#2f9e6f", "#3a7bd5", "#8a63d2", "#e0912f", "#d5638a"];
+  const shortCam = (nm) => nm.replace(/^CM\d+-\d+\s*/, "");
+  const camColor = (i) => CAM_COLORS[i % CAM_COLORS.length];
+  // カメラ別の積み上げ入店バー（camsは camNames順）
+  const stackBar = (x, w, cams, yBar) => {
+    let s = "", acc = 0;
+    for (let k = 0; k < cams.length; k++) {
+      const v = cams[k] || 0; if (v <= 0) continue;
+      const top = yBar(acc + v), bot = yBar(acc);
+      s += `<rect x="${x.toFixed(1)}" y="${top.toFixed(1)}" width="${w.toFixed(1)}" height="${(bot - top).toFixed(1)}" fill="${camColor(k)}"/>`;
+      acc += v;
+    }
+    return s;
+  };
   const jstNow = () => new Date(Date.now() + 9 * 3600 * 1000);
   const jstTodayStr = () => jstNow().toISOString().slice(0, 10);
 
@@ -209,17 +225,18 @@ function boot() {
 
   function renderKpis(d) {
     let html;
-    if (d.mode === "week") {
+    if (d.mode === "week" || d.mode === "month") {
+      const pre = d.mode === "month" ? "月" : "週";
       // 営業日＝ピーク日の20%以上の入店がある日（設定日・休業日の少数ノイズを除外）
       const maxIn = Math.max(0, ...d.daily.map((x) => x.in));
       const bizDays = d.daily.filter((x) => x.in >= Math.max(1, maxIn * 0.2));
       const bizIn = bizDays.reduce((a, b) => a + b.in, 0);
       const avg = bizDays.length ? Math.round(bizIn / bizDays.length) : 0;
       const busiest = d.daily.reduce((a, b) => (b.in > a.in ? b : a), d.daily[0]);
-      const bLab = busiest.in ? `${DOW[busiest.dow]}曜（${Number(busiest.date.slice(8))}日）` : "–";
+      const bLab = busiest.in ? `${Number(busiest.date.slice(5, 7))}/${Number(busiest.date.slice(8))}（${DOW[busiest.dow]}）` : "–";
       html =
-        kpi(DOTS.in, "週合計 入店", `${d.totals.in.toLocaleString()}<span class="u">人</span>`, "月〜日の入店合計") +
-        kpi(DOTS.out, "週合計 退店", `${d.totals.out.toLocaleString()}<span class="u">人</span>`, "月〜日の退店合計") +
+        kpi(DOTS.in, `${pre}合計 入店`, `${d.totals.in.toLocaleString()}<span class="u">人</span>`, `${pre}間の入店合計`) +
+        kpi(DOTS.out, `${pre}合計 退店`, `${d.totals.out.toLocaleString()}<span class="u">人</span>`, `${pre}間の退店合計`) +
         kpi(DOTS.stay, "1営業日あたり", `${avg.toLocaleString()}<span class="u">人</span>`, `営業${bizDays.length}日の平均入店`) +
         kpi(DOTS.accent, "最多来店日", bLab, busiest.in ? `<span class="num">${busiest.in.toLocaleString()}人</span>` : "", true);
     } else {
@@ -236,20 +253,26 @@ function boot() {
         kpi(DOTS.stay, "滞在ピーク", `${(t.peak || 0).toLocaleString()}<span class="u">人</span>`, "当日の最大滞在") +
         kpi(DOTS.accent, "平均滞在時間", fmtDwell(t.dwellMin || 0), "推定・入店〜退店（リトルの法則）") +
         kpi(DOTS.in, "朝一比率", `${dashPct}<span class="u">%</span>`, t.dashHour >= 0 ? `${t.dashHour}時に${t.dashIn.toLocaleString()}人（開店ダッシュ）` : "—") +
-        kpi(DOTS.accent, "車客比率", `${carPct}<span class="u">%</span>`, `立体駐車場 ${(t.carIn || 0).toLocaleString()}人（車利用の目安）`);
+        kpi(DOTS.accent, "車客比率", `${carPct}<span class="u">%</span>`, `駐車場 ${(t.carIn || 0).toLocaleString()}人`);
     }
     $("kpis").innerHTML = html;
   }
 
   function renderHead(d) {
-    if (d.mode === "week") {
+    const camLeg = (d.camNames || []).map((nm, i) => `<span><i style="background:${camColor(i)}"></i>${shortCam(nm)}</span>`).join("");
+    const out = '<span><i style="background:var(--out)"></i>退店</span>';
+    if (d.mode === "month") {
+      $("chartTitle").textContent = "日別 入退店（月）";
+      $("chartHint").textContent = `${d.monthStart} 〜 ${d.monthEnd}`;
+      $("legend").innerHTML = camLeg + out;
+    } else if (d.mode === "week") {
       $("chartTitle").textContent = "曜日別 入退店（週）";
       $("chartHint").textContent = `${d.weekStart} 〜 ${d.weekEnd}`;
-      $("legend").innerHTML = '<span><i style="background:var(--in)"></i>入店</span><span><i style="background:var(--out)"></i>退店</span>';
+      $("legend").innerHTML = camLeg + out;
     } else {
       $("chartTitle").textContent = "時間帯別 入退店 ＆ 店内滞在";
-      $("chartHint").textContent = "1時間単位・JST";
-      $("legend").innerHTML = '<span><i style="background:var(--in)"></i>入店</span><span><i style="background:var(--out)"></i>退店</span><span><i class="ln"></i>店内滞在（推定・右軸）</span>';
+      $("chartHint").textContent = "1時間単位・JST（入店はカメラ別に色分け）";
+      $("legend").innerHTML = camLeg + out + '<span><i class="ln"></i>店内滞在（推定・右軸）</span>';
     }
   }
 
@@ -263,8 +286,8 @@ function boot() {
         <div class="means-lab"><span>🚗 車（立体駐車場） <b>${cp}%</b>・${car.toLocaleString()}人</span><span>🚶 徒歩・その他入口 <b>${wp}%</b>・${walk.toLocaleString()}人</span></div></div>`;
     }
     $("entrances").innerHTML = head + cs.map((e, i) => `
-      <div class="row"><div class="nm">${e.name}${i === 0 && e.in > 0 ? "<b>主入口</b>" : ""}</div>
-        <div class="bar"><i style="width:${(e.in / mx * 100).toFixed(1)}%"></i></div>
+      <div class="row"><div class="nm"><span class="cdot" style="background:${camColor(i)}"></span>${e.name}${i === 0 && e.in > 0 ? "<b>主入口</b>" : ""}</div>
+        <div class="bar"><i style="width:${(e.in / mx * 100).toFixed(1)}%;background:${camColor(i)}"></i></div>
         <div class="v num">${e.in.toLocaleString()}<span class="p">${(e.in / tot * 100).toFixed(0)}%</span></div></div>`).join("");
   }
 
@@ -294,9 +317,11 @@ function boot() {
     s += `<line class="baseline" x1="${m.l}" y1="${m.t + ih}" x2="${m.l + iw}" y2="${m.t + ih}"/>`;
     view.forEach((r, idx) => {
       const x0 = m.l + slot * idx + gap, cur = r.h === curHour;
-      const op = cur ? ' opacity="0.42"' : "";
-      s += `<rect x="${x0.toFixed(1)}" y="${yBar(r.in).toFixed(1)}" width="${bw.toFixed(1)}" height="${(m.t + ih - yBar(r.in)).toFixed(1)}" rx="2.5" fill="${cIn}"${op}/>`;
-      s += `<rect x="${(x0 + bw).toFixed(1)}" y="${yBar(r.out).toFixed(1)}" width="${bw.toFixed(1)}" height="${(m.t + ih - yBar(r.out)).toFixed(1)}" rx="2.5" fill="${cOut}"${op}/>`;
+      const inBar = r.cams
+        ? stackBar(x0, bw, r.cams, yBar)
+        : `<rect x="${x0.toFixed(1)}" y="${yBar(r.in).toFixed(1)}" width="${bw.toFixed(1)}" height="${(m.t + ih - yBar(r.in)).toFixed(1)}" fill="${cIn}"/>`;
+      const outBar = `<rect x="${(x0 + bw).toFixed(1)}" y="${yBar(r.out).toFixed(1)}" width="${bw.toFixed(1)}" height="${(m.t + ih - yBar(r.out)).toFixed(1)}" rx="2.5" fill="${cOut}"/>`;
+      s += (cur ? '<g opacity="0.42">' : "") + inBar + outBar + (cur ? "</g>" : "");
       const lblStyle = cur ? ' style="fill:var(--accent);font-weight:700"' : "";
       s += `<text class="axis-t" x="${(x0 + bw).toFixed(1)}" y="${H - m.b + 18}" text-anchor="middle"${lblStyle}>${r.h}時</text>`;
       if (cur) {
@@ -333,7 +358,9 @@ function boot() {
     s += `<line class="baseline" x1="${m.l}" y1="${m.t + ih}" x2="${m.l + iw}" y2="${m.t + ih}"/>`;
     view.forEach((r, idx) => {
       const x0 = m.l + slot * idx + gap;
-      s += `<rect x="${x0.toFixed(1)}" y="${yBar(r.in).toFixed(1)}" width="${bw.toFixed(1)}" height="${(m.t + ih - yBar(r.in)).toFixed(1)}" rx="3" fill="${cIn}"/>`;
+      s += r.cams
+        ? stackBar(x0, bw, r.cams, yBar)
+        : `<rect x="${x0.toFixed(1)}" y="${yBar(r.in).toFixed(1)}" width="${bw.toFixed(1)}" height="${(m.t + ih - yBar(r.in)).toFixed(1)}" rx="3" fill="${cIn}"/>`;
       s += `<rect x="${(x0 + bw).toFixed(1)}" y="${yBar(r.out).toFixed(1)}" width="${bw.toFixed(1)}" height="${(m.t + ih - yBar(r.out)).toFixed(1)}" rx="3" fill="${cOut}"/>`;
       if (r.in) s += `<text x="${(x0 + bw).toFixed(1)}" y="${(yBar(r.in) - 6).toFixed(1)}" text-anchor="middle" style="fill:var(--ink);font-size:11.5px;font-weight:${r === busiest ? 800 : 600}">${r.in.toLocaleString()}</text>`;
       const lab = ["日", "月", "火", "水", "木", "金", "土"][r.dow];
@@ -348,10 +375,47 @@ function boot() {
     $("hchart").innerHTML = s;
   }
 
+  function renderMonthChart(d) {
+    const host = $("chartHost");
+    const view = d.daily;
+    if (!view.some((r) => r.in || r.out)) {
+      host.innerHTML = '<div class="state">この月の入退店データはまだありません。</div>';
+      return;
+    }
+    host.innerHTML = '<svg id="hchart" viewBox="0 0 960 360" role="img" aria-label="日別グラフ"></svg>';
+    const W = 960, H = 360, m = { t: 28, r: 20, b: 40, l: 52 }, iw = W - m.l - m.r, ih = H - m.t - m.b;
+    const maxBar = Math.max(1, ...view.map((r) => Math.max(r.in, r.out)));
+    const yBar = (v) => m.t + ih - (v / maxBar) * ih;
+    const n = view.length, slot = iw / n, gap = slot * 0.12, bw = (slot - gap * 2) / 2;
+    const cIn = css("--in"), cOut = css("--out");
+    const busiest = view.reduce((a, b) => (b.in > a.in ? b : a), view[0]);
+    let s = ""; const ticks = 4;
+    for (let t = 0; t <= ticks; t++) { const val = Math.round(maxBar * t / ticks), y = yBar(val);
+      s += `<line class="grid" x1="${m.l}" y1="${y.toFixed(1)}" x2="${m.l + iw}" y2="${y.toFixed(1)}"/>`;
+      s += `<text class="axis" x="${m.l - 8}" y="${(y + 4).toFixed(1)}" text-anchor="end">${val}</text>`; }
+    s += `<line class="baseline" x1="${m.l}" y1="${m.t + ih}" x2="${m.l + iw}" y2="${m.t + ih}"/>`;
+    view.forEach((r, idx) => {
+      const x0 = m.l + slot * idx + gap, dn = Number(r.date.slice(8));
+      s += r.cams
+        ? stackBar(x0, bw, r.cams, yBar)
+        : `<rect x="${x0.toFixed(1)}" y="${yBar(r.in).toFixed(1)}" width="${bw.toFixed(1)}" height="${(m.t + ih - yBar(r.in)).toFixed(1)}" fill="${cIn}"/>`;
+      s += `<rect x="${(x0 + bw).toFixed(1)}" y="${yBar(r.out).toFixed(1)}" width="${bw.toFixed(1)}" height="${(m.t + ih - yBar(r.out)).toFixed(1)}" fill="${cOut}"/>`;
+      if (r === busiest && r.in) s += `<text x="${(x0 + bw).toFixed(1)}" y="${(yBar(r.in) - 5).toFixed(1)}" text-anchor="middle" style="fill:var(--ink);font-size:11px;font-weight:800">${r.in.toLocaleString()}</text>`;
+      // 日番号は隔日＋週末を表示（混雑回避）
+      if (dn % 2 === 1 || r.dow === 0 || r.dow === 6) {
+        const wk = r.dow === 0 ? "fill:var(--out)" : r.dow === 6 ? "fill:var(--stay)" : "";
+        s += `<text class="axis-t" x="${(x0 + bw).toFixed(1)}" y="${H - m.b + 16}" text-anchor="middle" style="font-size:9.5px;${wk}">${dn}</text>`;
+      }
+    });
+    $("hchart").innerHTML = s;
+  }
+
   function renderData(d) {
     renderHead(d);
     renderKpis(d);
-    if (d.mode === "week") renderWeekChart(d); else renderChart(d);
+    if (d.mode === "month") renderMonthChart(d);
+    else if (d.mode === "week") renderWeekChart(d);
+    else renderChart(d);
     renderEntrances(d);
   }
 
@@ -401,7 +465,12 @@ function boot() {
   load(pick.value);
   timers.push(setInterval(() => { if (pick.value === jstTodayStr()) load(pick.value); }, 60000));
 
-  const mo = new MutationObserver(() => { if (current) { if (current.mode === "week") renderWeekChart(current); else renderChart(current); } });
+  const mo = new MutationObserver(() => {
+    if (!current) return;
+    if (current.mode === "month") renderMonthChart(current);
+    else if (current.mode === "week") renderWeekChart(current);
+    else renderChart(current);
+  });
   mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
   return () => { timers.forEach(clearInterval); mo.disconnect(); };

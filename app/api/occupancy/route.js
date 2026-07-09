@@ -103,44 +103,100 @@ async function getDay(headers, date) {
   const carIn = carCam ? carCam.in : 0;
   const walkIn = Math.max(0, totalIn - carIn);
 
+  // カメラ別の時間帯内訳（入店）— 入店総数の多い順（cameras）に整列
+  const order = cameras.map((c) => c.name);
+  const nameToIdx = {}; CAMERAS.forEach((c, i) => { nameToIdx[c.name] = i; });
+  const camHourIn = CAMERAS.map(() => Array(24).fill(0));
+  results.forEach((r, i) => {
+    for (const ts in r.buckets) {
+      const h = Math.floor(((Number(ts) + JST_OFFSET) % 86400) / 3600);
+      camHourIn[i][h] += r.buckets[ts][0];
+    }
+  });
+  for (const row of hourly) row.cams = order.map((nm) => camHourIn[nameToIdx[nm]][row.h]);
+
   return {
     mode: "day", date, updatedAt: new Date().toISOString(),
     totals: { in: totalIn, out: totalOut, peak, current, dwellMin, dashHour, dashIn, carIn, walkIn },
-    hourly, cameras,
+    hourly, cameras, camNames: order,
   };
 }
 
-// 週単位（曜日別・月曜始まり）
+// 週単位（曜日別・月曜始まり）— 月と同じ 1_day 方式で統一（Verkadaウィジェットと一致）
 async function getWeek(headers, date) {
   const monday = weekMondayEpoch(date);
   const end = monday + 7 * 86400;
-  const daily = Array.from({ length: 7 }, (_, i) => {
+  const daily = [], idxByDate = {};
+  for (let i = 0; i < 7; i++) {
     const ds = dateStrFromEpoch(monday + i * 86400);
-    return { date: ds, dow: dowOf(ds), in: 0, out: 0 };
-  });
-  // occupancy_trends は 1_hour だと1週間分（168コマ）が範囲超過、1_day は日合計と不一致。
-  // → 各日を個別に 1_hour で取得して合算（日ビューと完全一致・確実）。
-  const dayResults = await Promise.all(daily.map((day) => {
-    const s = dayStartEpoch(day.date);
-    return Promise.all(CAMERAS.map((c) => fetchCamera(headers, c, s, s + 86400, "1_hour")));
-  }));
-
-  let totalIn = 0, totalOut = 0;
+    idxByDate[ds] = i;
+    daily.push({ date: ds, dow: dowOf(ds), in: 0, out: 0 });
+  }
+  const results = await Promise.all(CAMERAS.map((c) => fetchCamera(headers, c, monday, end, "1_day")));
   const camTot = CAMERAS.map((c) => ({ name: c.name, in: 0, out: 0 }));
-  daily.forEach((day, di) => {
-    dayResults[di].forEach((r, ci) => {
-      day.in += r.in; day.out += r.out;
-      camTot[ci].in += r.in; camTot[ci].out += r.out;
-      totalIn += r.in; totalOut += r.out;
-    });
+  const camDayIn = {};
+  let totalIn = 0, totalOut = 0;
+  results.forEach((r, ci) => {
+    for (const ts in r.buckets) {
+      const ds = dateStrFromEpoch(Number(ts));
+      const i = idxByDate[ds];
+      if (i != null) {
+        daily[i].in += r.buckets[ts][0]; daily[i].out += r.buckets[ts][1];
+        (camDayIn[ds] ??= Array(CAMERAS.length).fill(0))[ci] = r.buckets[ts][0];
+      }
+    }
+    camTot[ci].in += r.in; camTot[ci].out += r.out; totalIn += r.in; totalOut += r.out;
   });
   const cameras = camTot.sort((a, b) => b.in - a.in);
+  const order = cameras.map((c) => c.name);
+  const nameToIdx = {}; CAMERAS.forEach((c, i) => { nameToIdx[c.name] = i; });
+  daily.forEach((day) => { day.cams = order.map((nm) => (camDayIn[day.date] || [])[nameToIdx[nm]] || 0); });
   return {
     mode: "week", date,
     weekStart: daily[0].date, weekEnd: daily[6].date,
     updatedAt: new Date().toISOString(),
     totals: { in: totalIn, out: totalOut },
-    daily, cameras,
+    daily, cameras, camNames: order,
+  };
+}
+
+// 月単位（日別・1_dayバケット＝軽量）
+async function getMonth(headers, date) {
+  const [y, m] = date.split("-").map(Number);
+  const first = Date.UTC(y, m - 1, 1) / 1000 - JST_OFFSET;
+  const next = Date.UTC(y, m, 1) / 1000 - JST_OFFSET;
+  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const daily = [], idxByDate = {};
+  for (let d = 1; d <= daysInMonth; d++) {
+    const ds = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    idxByDate[ds] = daily.length;
+    daily.push({ date: ds, dow: dowOf(ds), in: 0, out: 0 });
+  }
+  const results = await Promise.all(CAMERAS.map((c) => fetchCamera(headers, c, first, next, "1_day")));
+  const camTot = CAMERAS.map((c) => ({ name: c.name, in: 0, out: 0 }));
+  const camDayIn = {}; // date -> [各カメラの入店]（CAMERAS順）
+  let totalIn = 0, totalOut = 0;
+  results.forEach((r, ci) => {
+    for (const ts in r.buckets) {
+      const ds = dateStrFromEpoch(Number(ts));
+      const i = idxByDate[ds];
+      if (i != null) {
+        daily[i].in += r.buckets[ts][0]; daily[i].out += r.buckets[ts][1];
+        (camDayIn[ds] ??= Array(CAMERAS.length).fill(0))[ci] = r.buckets[ts][0];
+      }
+    }
+    camTot[ci].in += r.in; camTot[ci].out += r.out; totalIn += r.in; totalOut += r.out;
+  });
+  const cameras = camTot.sort((a, b) => b.in - a.in);
+  const order = cameras.map((c) => c.name);
+  const nameToIdx = {}; CAMERAS.forEach((c, i) => { nameToIdx[c.name] = i; });
+  daily.forEach((day) => { day.cams = order.map((nm) => (camDayIn[day.date] || [])[nameToIdx[nm]] || 0); });
+  return {
+    mode: "month", date, month: `${y}-${String(m).padStart(2, "0")}`,
+    monthStart: daily[0].date, monthEnd: daily[daily.length - 1].date,
+    updatedAt: new Date().toISOString(),
+    totals: { in: totalIn, out: totalOut },
+    daily, cameras, camNames: order,
   };
 }
 
@@ -152,12 +208,14 @@ export async function GET(request) {
     const sp = new URL(request.url).searchParams;
     const q = sp.get("date") || "";
     const date = /^\d{4}-\d{2}-\d{2}$/.test(q) ? q : jstTodayStr();
-    const range = sp.get("range") === "week" ? "week" : "day";
+    const range = ["day", "week", "month"].includes(sp.get("range")) ? sp.get("range") : "day";
 
     const token = await getToken(key);
     const headers = { accept: "application/json", "x-verkada-auth": token };
 
-    const payload = range === "week" ? await getWeek(headers, date) : await getDay(headers, date);
+    const payload = range === "month" ? await getMonth(headers, date)
+      : range === "week" ? await getWeek(headers, date)
+      : await getDay(headers, date);
     return Response.json(payload, CACHE);
   } catch (e) {
     return Response.json({ error: String(e && e.message ? e.message : e) }, { status: 500 });
