@@ -109,6 +109,43 @@ const MARKUP = `
     </div>
   </section>
 
+  <section class="api">
+    <p class="cap">拡張提案 / ROADMAP</p>
+    <h2>今後の分析拡張プラン（ご提案）</h2>
+    <p class="lead">現在のダッシュボード（入退店・滞在・朝一・来店手段）に加え、パチンコ店の運営判断に直結する指標を段階的に追加できます。タグは実現条件の目安です。</p>
+    <div class="props">
+      <div class="prop"><div class="no">01</div><div class="b"><p class="t">稼働率（占有率）</p>
+        <p class="x">現在滞在 ÷ 総台数。パチンコ運営で最重要の「稼働」を時間帯別カーブで可視化。</p><span class="tag cap">総台数の登録で可</span></div></div>
+      <div class="prop"><div class="no">02</div><div class="b"><p class="t">年金・給料日 効果</p>
+        <p class="x">偶数月15日（年金）・5/25日（給料日）と来店増の相関を、通常日と比較して数値化。</p><span class="tag acc">データ蓄積で可</span></div></div>
+      <div class="prop"><div class="no">03</div><div class="b"><p class="t">夕方ラッシュ指数</p>
+        <p class="x">17〜19時の入店比率。朝一比率とセットで「朝型の店／夜型の店」を判定。</p><span class="tag now">即実装可</span></div></div>
+      <div class="prop"><div class="no">04</div><div class="b"><p class="t">二部制の山（二峰性）</p>
+        <p class="x">入店カーブが朝一集中か、夕方にもう一山あるかを判定し、専業／兼業の客層を推定。</p><span class="tag now">即実装可</span></div></div>
+      <div class="prop"><div class="no">05</div><div class="b"><p class="t">入口別の時間帯クセ</p>
+        <p class="x">駐車場＝朝一集中（車・地元常連）、街道側＝夕方寄り（近隣・徒歩）など客層差を可視化。</p><span class="tag now">即実装可</span></div></div>
+      <div class="prop"><div class="no">06</div><div class="b"><p class="t">回転の質・機会損失</p>
+        <p class="x">短時間で退店する客が多い時間帯＝空き台なし／見切りのシグナルを検出。</p><span class="tag now">即実装可</span></div></div>
+      <div class="prop"><div class="no">07</div><div class="b"><p class="t">天気 × 来店 相関</p>
+        <p class="x">雨・猛暑ほど来店増、を回帰で検証。天気は取得済みのため蓄積するだけで分析可能。</p><span class="tag acc">データ蓄積で可</span></div></div>
+      <div class="prop"><div class="no">08</div><div class="b"><p class="t">曜日×時間ヒートマップ／混雑予報</p>
+        <p class="x">混雑を色で可視化。蓄積後は「今から行くと混雑」の予報も提供可能。</p><span class="tag acc">データ蓄積で可</span></div></div>
+      <div class="prop"><div class="no">09</div><div class="b"><p class="t">ナンバー認識（LPR）商圏分析</p>
+        <p class="x">リピート車両率（常連度）・遠方ナンバー割合（商圏の広さ）・来店頻度を分析。</p><span class="tag ext">カメラ拡張(LPR)で可</span></div></div>
+      <div class="prop"><div class="no">10</div><div class="b"><p class="t">開店前の期待度</p>
+        <p class="x">開店前の駐車場・入口の滞留量＝「今日は出ると読まれている日」の先行指標。</p><span class="tag ext">検知拡張で可</span></div></div>
+    </div>
+    <div class="note">
+      <b>実装ステップのご提案</b>
+      <ul>
+        <li><b>Step1（即日）</b>：③夕方ラッシュ・④二峰性・⑤入口別クセ・⑥機会損失 ― 現在のデータで追加可能。</li>
+        <li><b>Step2（要ヒアリング）</b>：①稼働率 ― 総台数のご登録で、稼働カーブまで表示。</li>
+        <li><b>Step3（数週間の蓄積）</b>：②年金/給料日・⑦天気相関・⑧ヒートマップ／混雑予報。</li>
+        <li><b>Step4（カメラ拡張）</b>：⑨LPR商圏分析・⑩開店前期待度。</li>
+      </ul>
+    </div>
+  </section>
+
   <footer>
     <span>データ源：AIカメラ公開API ／ 天気：Open-Meteo</span>
     <span>Next.js on Vercel・ライブ生成</span>
