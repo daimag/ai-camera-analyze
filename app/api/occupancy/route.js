@@ -3,6 +3,8 @@
 // APIキーは環境変数 VERKADA_API_KEY（Vercel の Environment Variables）から読む。
 
 export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store"; // Next.jsのfetchキャッシュを全面無効化（常に最新）
+export const revalidate = 0;
 
 const BASE = "https://api.verkada.com";
 
@@ -47,6 +49,7 @@ async function getToken(key) {
   const r = await fetch(`${BASE}/token`, {
     method: "POST",
     headers: { "x-api-key": key, accept: "application/json" },
+    cache: "no-store",
   });
   if (!r.ok) throw new Error(`token取得失敗 HTTP ${r.status}`);
   return (await r.json()).token;
@@ -57,7 +60,7 @@ async function fetchCamera(headers, cam, start, end, interval) {
     camera_id: cam.id, preset_id: cam.preset,
     start_time: String(start), end_time: String(end), interval,
   });
-  const r = await fetch(`${BASE}/cameras/v1/analytics/occupancy_trends?${qs}`, { headers });
+  const r = await fetch(`${BASE}/cameras/v1/analytics/occupancy_trends?${qs}`, { headers, cache: "no-store" });
   if (!r.ok) return { in: 0, out: 0, buckets: {} };
   const d = await r.json();
   const buckets = {};

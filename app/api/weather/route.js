@@ -2,6 +2,8 @@
 // 下関市（PSJ新下関店付近）の天気を Open-Meteo から取得（APIキー不要）。
 
 export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
+export const revalidate = 0;
 
 const LAT = 34.0083;   // 下関市一の宮付近
 const LON = 130.9414;
@@ -46,7 +48,7 @@ export async function GET(request) {
         daily: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum",
         timezone: "Asia/Tokyo", start_date: monday, end_date: sunday,
       });
-      const rw = await fetch(`https://api.open-meteo.com/v1/forecast?${qw}`);
+      const rw = await fetch(`https://api.open-meteo.com/v1/forecast?${qw}`, { cache: "no-store" });
       if (!rw.ok) throw new Error(`weather取得失敗 HTTP ${rw.status}`);
       const dw = await rw.json();
       const times = dw.daily?.time || [];
@@ -69,7 +71,7 @@ export async function GET(request) {
     });
     if (isToday) qs.set("current", "temperature_2m,weather_code");
 
-    const r = await fetch(`https://api.open-meteo.com/v1/forecast?${qs}`);
+    const r = await fetch(`https://api.open-meteo.com/v1/forecast?${qs}`, { cache: "no-store" });
     if (!r.ok) throw new Error(`weather取得失敗 HTTP ${r.status}`);
     const d = await r.json();
 
