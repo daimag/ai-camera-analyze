@@ -1,8 +1,14 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "PSJ新下関店 入退店アナリティクス",
-  description: "Verkada AIカメラ＋公開APIによる来店計測ダッシュボード（日付・曜日・時刻・天気つき）",
+  title: "入退店ダッシュボード",
+  description: "",
+  robots: {
+    index: false,
+    follow: false,
+    nocache: true,
+    googleBot: { index: false, follow: false, noimageindex: true },
+  },
 };
 
 export const viewport = {

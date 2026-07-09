@@ -21,11 +21,45 @@ const WMO = {
 function jstTodayStr() {
   return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 }
+function addDays(dateStr, n) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+}
+function dow(dateStr) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+function wmo(code) { return WMO[code] || ["--", "🌡️"]; }
 
 export async function GET(request) {
   try {
-    const q = new URL(request.url).searchParams.get("date") || "";
+    const sp = new URL(request.url).searchParams;
+    const q = sp.get("date") || "";
     const date = /^\d{4}-\d{2}-\d{2}$/.test(q) ? q : jstTodayStr();
+
+    // 週モード：月曜〜日曜の7日分を返す
+    if (sp.get("range") === "week") {
+      const monday = addDays(date, -(((dow(date) + 6) % 7)));
+      const sunday = addDays(monday, 6);
+      const qw = new URLSearchParams({
+        latitude: String(LAT), longitude: String(LON),
+        daily: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum",
+        timezone: "Asia/Tokyo", start_date: monday, end_date: sunday,
+      });
+      const rw = await fetch(`https://api.open-meteo.com/v1/forecast?${qw}`);
+      if (!rw.ok) throw new Error(`weather取得失敗 HTTP ${rw.status}`);
+      const dw = await rw.json();
+      const times = dw.daily?.time || [];
+      const daily = times.map((t, i) => {
+        const [desc, emoji] = wmo(dw.daily.weather_code[i]);
+        return { date: t, dow: dow(t), code: dw.daily.weather_code[i], desc, emoji,
+          tmax: dw.daily.temperature_2m_max[i], tmin: dw.daily.temperature_2m_min[i],
+          precip: dw.daily.precipitation_sum[i] };
+      });
+      return Response.json({ mode: "week", weekStart: monday, weekEnd: sunday, daily },
+        { headers: { "Cache-Control": "s-maxage=900, stale-while-revalidate=1800" } });
+    }
+
     const isToday = date === jstTodayStr();
 
     const qs = new URLSearchParams({

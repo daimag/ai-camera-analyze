@@ -6,7 +6,7 @@ const MARKUP = `
   <header class="masthead">
     <div>
       <p class="eyebrow">店舗 入退店アナリティクス</p>
-      <h1>PSJ新下関店<small>Verkada AIカメラ ＋ 公開API による来店計測</small></h1>
+      <h1>入退店ダッシュボード<small>AIカメラ ＋ 公開API による来店計測</small></h1>
     </div>
   </header>
 
@@ -24,7 +24,7 @@ const MARKUP = `
       <span class="v num" id="clock">--:--:--</span>
     </div>
     <div class="chip wx">
-      <span class="k" id="wxLabel">下関の天気</span>
+      <span class="k" id="wxLabel">現地の天気</span>
       <span class="v"><span class="emo" id="wxEmo">🌡️</span><span id="wxTemp">--</span><span class="mm" id="wxMM"></span></span>
     </div>
     <div class="chip seg-chip">
@@ -110,7 +110,7 @@ const MARKUP = `
   </section>
 
   <footer>
-    <span>データ源：Verkada 公開API（api.verkada.com）／ 天気：Open-Meteo ／ org: psj-shinshimonoseki</span>
+    <span>データ源：AIカメラ公開API ／ 天気：Open-Meteo</span>
     <span>Next.js on Vercel・ライブ生成</span>
   </footer>
 </div>
@@ -151,7 +151,7 @@ function boot() {
       $("wxTemp").textContent = temp;
       const desc = (w.current && w.current.desc) || w.desc || "";
       $("wxMM").textContent = (w.tmax != null && w.tmin != null) ? `${desc}・${Math.round(w.tmax)}/${Math.round(w.tmin)}°` : desc;
-      $("wxLabel").textContent = w.current ? "下関の天気（現在）" : "下関の天気";
+      $("wxLabel").textContent = w.current ? "現地の天気（現在）" : "現地の天気";
     } catch (e) { $("wxTemp").textContent = "取得不可"; }
   }
 
@@ -163,14 +163,17 @@ function boot() {
   function renderKpis(d) {
     let html;
     if (d.mode === "week") {
-      const days = d.daily.filter((x) => x.in || x.out);
-      const avg = days.length ? Math.round(d.totals.in / days.length) : 0;
+      // 営業日＝ピーク日の20%以上の入店がある日（設定日・休業日の少数ノイズを除外）
+      const maxIn = Math.max(0, ...d.daily.map((x) => x.in));
+      const bizDays = d.daily.filter((x) => x.in >= Math.max(1, maxIn * 0.2));
+      const bizIn = bizDays.reduce((a, b) => a + b.in, 0);
+      const avg = bizDays.length ? Math.round(bizIn / bizDays.length) : 0;
       const busiest = d.daily.reduce((a, b) => (b.in > a.in ? b : a), d.daily[0]);
       const bLab = busiest.in ? `${DOW[busiest.dow]}曜（${Number(busiest.date.slice(8))}日）` : "–";
       html =
         kpi(DOTS.in, "週合計 入店", `${d.totals.in.toLocaleString()}<span class="u">人</span>`, "月〜日の入店合計") +
         kpi(DOTS.out, "週合計 退店", `${d.totals.out.toLocaleString()}<span class="u">人</span>`, "月〜日の退店合計") +
-        kpi(DOTS.stay, "1営業日あたり", `${avg.toLocaleString()}<span class="u">人</span>`, "データがある日の平均入店") +
+        kpi(DOTS.stay, "1営業日あたり", `${avg.toLocaleString()}<span class="u">人</span>`, `営業${bizDays.length}日の平均入店`) +
         kpi(DOTS.accent, "最多来店日", bLab, busiest.in ? `<span class="num">${busiest.in.toLocaleString()}人</span>` : "", true);
     } else {
       const top = d.cameras[0] || { name: "–", in: 0 };
@@ -247,7 +250,7 @@ function boot() {
       return;
     }
     host.innerHTML = '<svg id="hchart" viewBox="0 0 960 380" role="img" aria-label="曜日別グラフ"></svg>';
-    const W = 960, H = 380, m = { t: 28, r: 20, b: 44, l: 52 }, iw = W - m.l - m.r, ih = H - m.t - m.b;
+    const W = 960, H = 388, m = { t: 28, r: 20, b: 74, l: 52 }, iw = W - m.l - m.r, ih = H - m.t - m.b;
     const maxBar = Math.max(1, ...view.map((r) => Math.max(r.in, r.out)));
     const yBar = (v) => m.t + ih - (v / maxBar) * ih;
     const n = view.length, slot = iw / n, gap = slot * 0.18, bw = (slot - gap * 2) / 2;
@@ -264,7 +267,13 @@ function boot() {
       s += `<rect x="${(x0 + bw).toFixed(1)}" y="${yBar(r.out).toFixed(1)}" width="${bw.toFixed(1)}" height="${(m.t + ih - yBar(r.out)).toFixed(1)}" rx="3" fill="${cOut}"/>`;
       if (r.in) s += `<text x="${(x0 + bw).toFixed(1)}" y="${(yBar(r.in) - 6).toFixed(1)}" text-anchor="middle" style="fill:var(--ink);font-size:11.5px;font-weight:${r === busiest ? 800 : 600}">${r.in.toLocaleString()}</text>`;
       const lab = ["日", "月", "火", "水", "木", "金", "土"][r.dow];
-      s += `<text class="axis-t" x="${(x0 + bw).toFixed(1)}" y="${H - m.b + 18}" text-anchor="middle">${lab} ${Number(r.date.slice(8))}日</text>`;
+      const cx = (x0 + bw).toFixed(1);
+      s += `<text class="axis-t" x="${cx}" y="${H - m.b + 18}" text-anchor="middle">${lab} ${Number(r.date.slice(8))}日</text>`;
+      const w = d.weather && d.weather[r.date];
+      if (w) {
+        s += `<text x="${cx}" y="${H - m.b + 42}" text-anchor="middle" style="font-size:17px">${w.emoji}</text>`;
+        if (w.tmax != null) s += `<text x="${cx}" y="${H - m.b + 58}" text-anchor="middle" style="fill:var(--faint);font-size:10.5px">${Math.round(w.tmax)}°/${Math.round(w.tmin)}°</text>`;
+      }
     });
     $("hchart").innerHTML = s;
   }
@@ -281,8 +290,11 @@ function boot() {
     $("liveTxt").textContent = "更新中…";
     loadWeather(dateStr);
     try {
-      const d = await (await fetch(`/api/occupancy?date=${dateStr}&range=${mode}`)).json();
+      const reqs = [fetch(`/api/occupancy?date=${dateStr}&range=${mode}`).then((r) => r.json())];
+      if (mode === "week") reqs.push(fetch(`/api/weather?date=${dateStr}&range=week`).then((r) => r.json()).catch(() => null));
+      const [d, wx] = await Promise.all(reqs);
       if (d.error) throw new Error(d.error);
+      if (mode === "week" && wx && wx.daily) { d.weather = {}; wx.daily.forEach((x) => { d.weather[x.date] = x; }); }
       current = d;
       renderData(d);
       const jt = new Date(new Date(d.updatedAt).getTime() + 9 * 3600 * 1000), p = (n) => String(n).padStart(2, "0");
