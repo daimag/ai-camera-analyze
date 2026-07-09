@@ -185,8 +185,11 @@ function boot() {
       const isT = d.date === jstTodayStr();
       const dashPct = (t.dashHour >= 0 && tot) ? Math.round(t.dashIn / tot * 100) : 0;
       const carPct = tot ? Math.round((t.carIn || 0) / tot * 100) : 0;
+      const io = `<div class="kpi"><div class="lab"><span class="dot" style="background:var(--in)"></span>総入店 <span style="color:var(--faint)">/</span> <span class="dot" style="background:var(--out)"></span>総退店</div>
+        <div class="val num" style="font-size:24px"><span style="color:var(--in)">${t.in.toLocaleString()}</span> <span style="color:var(--faint)">/</span> <span style="color:var(--out)">${t.out.toLocaleString()}</span><span class="u">人</span></div>
+        <div class="sub">入店 / 退店（ライン横断数）</div></div>`;
       html =
-        kpi(DOTS.in, "総入店", `${t.in.toLocaleString()}<span class="u">人</span>`, "全入口の入店ライン横断数") +
+        io +
         kpi(DOTS.stay, isT ? "店内滞在（現在）" : "店内滞在（終値）", `${(t.current || 0).toLocaleString()}<span class="u">人</span>`, isT ? "いま店内にいる推定人数" : "終業時点の推定人数") +
         kpi(DOTS.stay, "滞在ピーク", `${(t.peak || 0).toLocaleString()}<span class="u">人</span>`, "当日の最大滞在") +
         kpi(DOTS.accent, "平均滞在時間", fmtDwell(t.dwellMin || 0), "推定・入店〜退店（リトルの法則）") +
