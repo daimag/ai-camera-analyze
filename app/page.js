@@ -156,6 +156,11 @@ function boot() {
   }
 
   const DOTS = { in: "var(--in)", out: "var(--out)", stay: "var(--stay)", accent: "var(--accent)" };
+  const fmtDwell = (min) => {
+    if (!min) return "–";
+    if (min >= 60) return `${Math.floor(min / 60)}<span class="u">時間</span>${min % 60}<span class="u">分</span>`;
+    return `${min}<span class="u">分</span>`;
+  };
   const kpi = (dot, lab, val, sub, big) =>
     `<div class="kpi"><div class="lab"><span class="dot" style="background:${dot}"></span>${lab}</div>
       <div class="val${big ? "" : " num"}"${big ? ' style="font-size:20px"' : ""}>${val}</div><div class="sub">${sub}</div></div>`;
@@ -176,13 +181,17 @@ function boot() {
         kpi(DOTS.stay, "1営業日あたり", `${avg.toLocaleString()}<span class="u">人</span>`, `営業${bizDays.length}日の平均入店`) +
         kpi(DOTS.accent, "最多来店日", bLab, busiest.in ? `<span class="num">${busiest.in.toLocaleString()}人</span>` : "", true);
     } else {
-      const top = d.cameras[0] || { name: "–", in: 0 };
-      const tot = d.totals.in || 0, pct = tot ? Math.round(top.in / tot * 100) : 0;
+      const t = d.totals, tot = t.in || 0;
+      const isT = d.date === jstTodayStr();
+      const dashPct = (t.dashHour >= 0 && tot) ? Math.round(t.dashIn / tot * 100) : 0;
+      const carPct = tot ? Math.round((t.carIn || 0) / tot * 100) : 0;
       html =
-        kpi(DOTS.in, "総入店", `${d.totals.in.toLocaleString()}<span class="u">人</span>`, "全入口の入店ライン横断数") +
-        kpi(DOTS.out, "総退店", `${d.totals.out.toLocaleString()}<span class="u">人</span>`, "全入口の退店ライン横断数") +
-        kpi(DOTS.stay, "店内滞在ピーク", `${(d.totals.peak || 0).toLocaleString()}<span class="u">人</span>`, "入−出の累積最大") +
-        kpi(DOTS.accent, "主入口", top.name.replace(/^CM\d+-\d+ /, ""), `<span class="num">${top.in.toLocaleString()}人</span>・全体の<span class="num">${pct}%</span>`, true);
+        kpi(DOTS.in, "総入店", `${t.in.toLocaleString()}<span class="u">人</span>`, "全入口の入店ライン横断数") +
+        kpi(DOTS.stay, isT ? "店内滞在（現在）" : "店内滞在（終値）", `${(t.current || 0).toLocaleString()}<span class="u">人</span>`, isT ? "いま店内にいる推定人数" : "終業時点の推定人数") +
+        kpi(DOTS.stay, "滞在ピーク", `${(t.peak || 0).toLocaleString()}<span class="u">人</span>`, "当日の最大滞在") +
+        kpi(DOTS.accent, "平均滞在時間", fmtDwell(t.dwellMin || 0), "推定・入店〜退店（リトルの法則）") +
+        kpi(DOTS.in, "朝一比率", `${dashPct}<span class="u">%</span>`, t.dashHour >= 0 ? `${t.dashHour}時に${t.dashIn.toLocaleString()}人（開店ダッシュ）` : "—") +
+        kpi(DOTS.accent, "車客比率", `${carPct}<span class="u">%</span>`, `立体駐車場 ${(t.carIn || 0).toLocaleString()}人（車利用の目安）`);
     }
     $("kpis").innerHTML = html;
   }
@@ -201,7 +210,14 @@ function boot() {
 
   function renderEntrances(d) {
     const cs = d.cameras, mx = Math.max(1, ...cs.map((c) => c.in)), tot = Math.max(1, d.totals.in);
-    $("entrances").innerHTML = cs.map((e, i) => `
+    let head = "";
+    if (d.mode === "day" && d.totals.carIn != null && d.totals.in > 0) {
+      const car = d.totals.carIn, walk = d.totals.walkIn;
+      const cp = Math.round(car / tot * 100), wp = 100 - cp;
+      head = `<div class="means"><div class="means-bar"><span class="car" style="width:${cp}%"></span><span class="walk" style="width:${wp}%"></span></div>
+        <div class="means-lab"><span>🚗 車（立体駐車場） <b>${cp}%</b>・${car.toLocaleString()}人</span><span>🚶 徒歩・その他入口 <b>${wp}%</b>・${walk.toLocaleString()}人</span></div></div>`;
+    }
+    $("entrances").innerHTML = head + cs.map((e, i) => `
       <div class="row"><div class="nm">${e.name}${i === 0 && e.in > 0 ? "<b>主入口</b>" : ""}</div>
         <div class="bar"><i style="width:${(e.in / mx * 100).toFixed(1)}%"></i></div>
         <div class="v num">${e.in.toLocaleString()}<span class="p">${(e.in / tot * 100).toFixed(0)}%</span></div></div>`).join("");

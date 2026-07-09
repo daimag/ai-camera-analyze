@@ -87,10 +87,24 @@ async function getDay(headers, date) {
       hourly[h].out += r.buckets[ts][1];
     }
   });
-  let run = 0, peak = 0;
-  for (const row of hourly) { run += row.in - row.out; row.stay = Math.max(0, run); peak = Math.max(peak, row.stay); }
+  let run = 0, peak = 0, personHours = 0;
+  for (const row of hourly) { run += row.in - row.out; row.stay = Math.max(0, run); peak = Math.max(peak, row.stay); personHours += row.stay; }
   cameras.sort((a, b) => b.in - a.in);
-  return { mode: "day", date, updatedAt: new Date().toISOString(), totals: { in: totalIn, out: totalOut, peak }, hourly, cameras };
+
+  // 追加指標
+  const current = Math.max(0, totalIn - totalOut);              // 現在（今日）/終値 店内人数
+  const dwellMin = totalIn ? Math.round((personHours / totalIn) * 60) : 0; // 平均滞在(推定・分)
+  let dashHour = -1, dashIn = 0;                                 // 朝一ピーク（開店ダッシュ）
+  for (const row of hourly) { if (row.h <= 11 && row.in > dashIn) { dashIn = row.in; dashHour = row.h; } }
+  const carCam = cameras.find((c) => c.name.includes("立体駐車場")); // 車客＝駐車場入口
+  const carIn = carCam ? carCam.in : 0;
+  const walkIn = Math.max(0, totalIn - carIn);
+
+  return {
+    mode: "day", date, updatedAt: new Date().toISOString(),
+    totals: { in: totalIn, out: totalOut, peak, current, dwellMin, dashHour, dashIn, carIn, walkIn },
+    hourly, cameras,
+  };
 }
 
 // 週単位（曜日別・月曜始まり）
