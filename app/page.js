@@ -23,6 +23,10 @@ const MARKUP = `
       <span class="k">現在時刻（JST）</span>
       <span class="v num" id="clock">--:--:--</span>
     </div>
+    <div class="chip">
+      <span class="k">API最新取得</span>
+      <span class="v num" id="apiTime" style="font-size:15px">--:--:--</span>
+    </div>
     <div class="chip wx">
       <span class="k" id="wxLabel">現地の天気</span>
       <span class="v"><span class="emo" id="wxEmo">🌡️</span><span id="wxTemp">--</span><span class="mm" id="wxMM"></span></span>
@@ -280,6 +284,7 @@ function boot() {
     const yBar = (v) => m.t + ih - (v / maxBar) * ih, yStay = (v) => m.t + ih - (v / maxStay) * ih;
     const n = view.length, slot = iw / n, gap = slot * 0.16, bw = (slot - gap * 2) / 2;
     const cIn = css("--in"), cOut = css("--out"), cStay = css("--stay");
+    const curHour = d.date === jstTodayStr() ? jstNow().getUTCHours() : -1; // 進行中の時間
     let s = ""; const ticks = 4;
     for (let t = 0; t <= ticks; t++) { const val = Math.round(maxBar * t / ticks), y = yBar(val);
       s += `<line class="grid" x1="${m.l}" y1="${y.toFixed(1)}" x2="${m.l + iw}" y2="${y.toFixed(1)}"/>`;
@@ -287,10 +292,18 @@ function boot() {
     for (let t = 0; t <= ticks; t++) { const val = Math.round(maxStay * t / ticks), y = yStay(val);
       s += `<text class="axis" x="${m.l + iw + 8}" y="${(y + 4).toFixed(1)}" text-anchor="start" style="fill:${cStay}">${val}</text>`; }
     s += `<line class="baseline" x1="${m.l}" y1="${m.t + ih}" x2="${m.l + iw}" y2="${m.t + ih}"/>`;
-    view.forEach((r, idx) => { const x0 = m.l + slot * idx + gap;
-      s += `<rect x="${x0.toFixed(1)}" y="${yBar(r.in).toFixed(1)}" width="${bw.toFixed(1)}" height="${(m.t + ih - yBar(r.in)).toFixed(1)}" rx="2.5" fill="${cIn}"/>`;
-      s += `<rect x="${(x0 + bw).toFixed(1)}" y="${yBar(r.out).toFixed(1)}" width="${bw.toFixed(1)}" height="${(m.t + ih - yBar(r.out)).toFixed(1)}" rx="2.5" fill="${cOut}"/>`;
-      s += `<text class="axis-t" x="${(x0 + bw).toFixed(1)}" y="${H - m.b + 18}" text-anchor="middle">${r.h}時</text>`; });
+    view.forEach((r, idx) => {
+      const x0 = m.l + slot * idx + gap, cur = r.h === curHour;
+      const op = cur ? ' opacity="0.42"' : "";
+      s += `<rect x="${x0.toFixed(1)}" y="${yBar(r.in).toFixed(1)}" width="${bw.toFixed(1)}" height="${(m.t + ih - yBar(r.in)).toFixed(1)}" rx="2.5" fill="${cIn}"${op}/>`;
+      s += `<rect x="${(x0 + bw).toFixed(1)}" y="${yBar(r.out).toFixed(1)}" width="${bw.toFixed(1)}" height="${(m.t + ih - yBar(r.out)).toFixed(1)}" rx="2.5" fill="${cOut}"${op}/>`;
+      const lblStyle = cur ? ' style="fill:var(--accent);font-weight:700"' : "";
+      s += `<text class="axis-t" x="${(x0 + bw).toFixed(1)}" y="${H - m.b + 18}" text-anchor="middle"${lblStyle}>${r.h}時</text>`;
+      if (cur) {
+        const ytop = Math.min(yBar(r.in), yBar(r.out)) - 6;
+        s += `<text x="${(x0 + bw).toFixed(1)}" y="${ytop.toFixed(1)}" text-anchor="middle" style="fill:var(--accent);font-size:10px;font-weight:700">速報</text>`;
+      }
+    });
     const pts = view.map((r, idx) => [m.l + slot * idx + slot / 2, yStay(r.stay)]);
     s += `<polyline fill="none" stroke="${cStay}" stroke-width="2.6" stroke-linejoin="round" points="${pts.map((p) => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ")}"/>`;
     pts.forEach((p, idx) => { const last = idx === pts.length - 1;
@@ -358,6 +371,8 @@ function boot() {
       current = d;
       renderData(d);
       const jt = new Date(new Date(d.updatedAt).getTime() + 9 * 3600 * 1000), p = (n) => String(n).padStart(2, "0");
+      const hhmmss = `${p(jt.getUTCHours())}:${p(jt.getUTCMinutes())}:${p(jt.getUTCSeconds())}`;
+      $("apiTime").textContent = hhmmss;
       $("liveTxt").textContent = `${p(jt.getUTCHours())}:${p(jt.getUTCMinutes())} 時点`;
     } catch (e) {
       $("liveTxt").textContent = "取得エラー";

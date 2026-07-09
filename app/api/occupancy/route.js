@@ -115,23 +115,23 @@ async function getWeek(headers, date) {
     const ds = dateStrFromEpoch(monday + i * 86400);
     return { date: ds, dow: dowOf(ds), in: 0, out: 0 };
   });
-  const idxByStart = {};
-  daily.forEach((d, i) => { idxByStart[dayStartEpoch(d.date)] = i; });
+  // occupancy_trends は 1_hour だと1週間分（168コマ）が範囲超過、1_day は日合計と不一致。
+  // → 各日を個別に 1_hour で取得して合算（日ビューと完全一致・確実）。
+  const dayResults = await Promise.all(daily.map((day) => {
+    const s = dayStartEpoch(day.date);
+    return Promise.all(CAMERAS.map((c) => fetchCamera(headers, c, s, s + 86400, "1_hour")));
+  }));
 
-  const cameras = [];
   let totalIn = 0, totalOut = 0;
-  const results = await Promise.all(CAMERAS.map((c) => fetchCamera(headers, c, monday, end, "1_day")));
-  results.forEach((r, ci) => {
-    cameras.push({ name: CAMERAS[ci].name, in: r.in, out: r.out });
-    totalIn += r.in; totalOut += r.out;
-    for (const ts in r.buckets) {
-      // バケット開始をその日の0:00に丸めて対応日を特定
-      const dayStart = Math.floor((Number(ts) + JST_OFFSET) / 86400) * 86400 - JST_OFFSET;
-      const i = idxByStart[dayStart];
-      if (i != null) { daily[i].in += r.buckets[ts][0]; daily[i].out += r.buckets[ts][1]; }
-    }
+  const camTot = CAMERAS.map((c) => ({ name: c.name, in: 0, out: 0 }));
+  daily.forEach((day, di) => {
+    dayResults[di].forEach((r, ci) => {
+      day.in += r.in; day.out += r.out;
+      camTot[ci].in += r.in; camTot[ci].out += r.out;
+      totalIn += r.in; totalOut += r.out;
+    });
   });
-  cameras.sort((a, b) => b.in - a.in);
+  const cameras = camTot.sort((a, b) => b.in - a.in);
   return {
     mode: "week", date,
     weekStart: daily[0].date, weekEnd: daily[6].date,
