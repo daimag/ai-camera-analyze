@@ -52,7 +52,19 @@ const MARKUP = `
   </section>
 
   <section class="card">
-    <div class="h"><h2 id="chartTitle">時間帯別 入退店 ＆ 店内滞在</h2><span class="hint" id="chartHint">1時間単位・JST</span></div>
+    <div class="h">
+      <h2 id="chartTitle">時間帯別 入退店 ＆ 店内滞在</h2>
+      <div class="ctools" id="ctools">
+        <button type="button" id="cmpBtn" class="cmp-btn">＋ 比較</button>
+        <span class="cmp-fields" id="cmpFields" style="display:none">
+          <input type="date" id="cmpDate" class="cmp-date">
+          <button type="button" class="cmp-q" data-off="7">先週同曜</button>
+          <button type="button" class="cmp-q" data-off="1">前日</button>
+          <button type="button" id="cmpOff" class="cmp-q">解除</button>
+        </span>
+        <span class="hint" id="chartHint">1時間単位・JST</span>
+      </div>
+    </div>
     <div class="legend" id="legend"></div>
     <div id="chartHost" class="chart-scroll"><svg id="hchart" viewBox="0 0 960 380" role="img" aria-label="グラフ"></svg></div>
   </section>
@@ -181,6 +193,9 @@ function boot() {
     }
     return s;
   };
+  let cmpOn = false;
+  const addDaysStr = (ds, n) => { const [y, m, d] = ds.split("-").map(Number); return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10); };
+  const mdDow = (ds) => { const [y, m, d] = ds.split("-").map(Number); const w = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); return `${m}/${d}（${DOW[w]}）`; };
   const jstNow = () => new Date(Date.now() + 9 * 3600 * 1000);
   const jstTodayStr = () => jstNow().toISOString().slice(0, 10);
 
@@ -260,6 +275,17 @@ function boot() {
   }
 
   function renderHead(d) {
+    if (d.compare) {
+      const ti = d.totals.in, ci = d.compare.totals.in;
+      const diff = ci ? Math.round((ti - ci) / ci * 100) : 0, sign = diff > 0 ? "+" : "";
+      $("chartTitle").textContent = "時間帯別 入店の比較";
+      $("chartHint").innerHTML = `入店 今日 ${ti.toLocaleString()} ／ 比較 ${ci.toLocaleString()}（<span style="color:${diff >= 0 ? "var(--in)" : "var(--out)"};font-weight:700">${sign}${diff}%</span>）`;
+      $("legend").innerHTML =
+        `<span><i class="ln" style="border-top-color:var(--in)"></i>${mdDow(d.date)} 入店</span>` +
+        `<span><i class="ln" style="border-top-color:var(--faint);border-top-style:dashed"></i>${mdDow(d.compare.date)} 入店</span>` +
+        `<span><i class="ln"></i>店内滞在（今日・右軸）</span>`;
+      return;
+    }
     const camLeg = (d.camNames || []).map((nm, i) => `<span><i style="background:${camColor(i)}"></i>${shortCam(nm)}</span>`).join("");
     const out = '<span><i style="background:var(--out)"></i>退店</span>';
     if (d.mode === "month") {
@@ -411,10 +437,57 @@ function boot() {
     $("hchart").innerHTML = s;
   }
 
+  function renderCompareChart(d) {
+    const host = $("chartHost");
+    const A = d.hourly, B = d.compare.hourly;
+    const act = A.concat(B).filter((r) => r.in || r.out);
+    if (!act.length) { host.innerHTML = '<div class="state">比較するデータがありません。</div>'; return; }
+    host.innerHTML = '<svg id="hchart" viewBox="0 0 960 380" role="img" aria-label="入店比較グラフ"></svg>';
+    const lo = Math.min(...act.map((r) => r.h)), hi = Math.max(...act.map((r) => r.h));
+    const minH = Math.max(0, lo - 1), maxH = Math.min(23, hi + 1);
+    const view = A.filter((r) => r.h >= minH && r.h <= maxH);
+    const bByH = {}; B.forEach((r) => { bByH[r.h] = r; });
+    const W = 960, H = 380, m = { t: 24, r: 56, b: 44, l: 52 }, iw = W - m.l - m.r, ih = H - m.t - m.b;
+    const maxIn = Math.max(1, ...A.concat(B).map((r) => r.in));
+    const maxStay = Math.max(1, ...A.map((r) => r.stay || 0));
+    const yIn = (v) => m.t + ih - (v / maxIn) * ih, yStay = (v) => m.t + ih - (v / maxStay) * ih;
+    const n = view.length, slot = iw / n, cx = (idx) => m.l + slot * idx + slot / 2;
+    const cIn = css("--in"), cStay = css("--stay"), cFaint = css("--faint");
+    const curHour = d.date === jstTodayStr() ? jstNow().getUTCHours() : -1;
+    let s = ""; const ticks = 4;
+    for (let t = 0; t <= ticks; t++) { const val = Math.round(maxIn * t / ticks), y = yIn(val);
+      s += `<line class="grid" x1="${m.l}" y1="${y.toFixed(1)}" x2="${m.l + iw}" y2="${y.toFixed(1)}"/>`;
+      s += `<text class="axis" x="${m.l - 8}" y="${(y + 4).toFixed(1)}" text-anchor="end">${val}</text>`; }
+    for (let t = 0; t <= ticks; t++) { const val = Math.round(maxStay * t / ticks), y = yStay(val);
+      s += `<text class="axis" x="${m.l + iw + 8}" y="${(y + 4).toFixed(1)}" text-anchor="start" style="fill:${cStay}">${val}</text>`; }
+    s += `<line class="baseline" x1="${m.l}" y1="${m.t + ih}" x2="${m.l + iw}" y2="${m.t + ih}"/>`;
+    view.forEach((r, idx) => {
+      const lbl = r.h === curHour ? ' style="fill:var(--accent);font-weight:700"' : "";
+      s += `<text class="axis-t" x="${cx(idx).toFixed(1)}" y="${H - m.b + 18}" text-anchor="middle"${lbl}>${r.h}時</text>`;
+    });
+    const line = (pts, color, w, dash, op) =>
+      `<polyline fill="none" stroke="${color}" stroke-width="${w}" stroke-linejoin="round"${dash ? ` stroke-dasharray="${dash}"` : ""}${op ? ` opacity="${op}"` : ""} points="${pts.map((p) => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ")}"/>`;
+    // 店内滞在（今日・右軸・薄め）
+    s += line(view.map((r, i) => [cx(i), yStay(r.stay || 0)]), cStay, 2, "", 0.5);
+    // 比較日の入店（灰・破線）
+    const cpts = view.map((r, i) => [cx(i), yIn((bByH[r.h] || { in: 0 }).in)]);
+    s += line(cpts, cFaint, 2.2, "5 4");
+    cpts.forEach((p) => { s += `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="2.5" fill="${cFaint}"/>`; });
+    // 今日の入店（緑・実線）
+    const apts = view.map((r, i) => [cx(i), yIn(r.in)]);
+    s += line(apts, cIn, 2.8, "");
+    apts.forEach((p, idx) => {
+      const cur = view[idx].h === curHour;
+      s += `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${cur ? 4.5 : 3}" fill="${cIn}" stroke="var(--panel)" stroke-width="1.5"/>`;
+    });
+    $("hchart").innerHTML = s;
+  }
+
   function renderData(d) {
     renderHead(d);
     renderKpis(d);
-    if (d.mode === "month") renderMonthChart(d);
+    if (d.compare) renderCompareChart(d);
+    else if (d.mode === "month") renderMonthChart(d);
     else if (d.mode === "week") renderWeekChart(d);
     else renderChart(d);
     renderEntrances(d);
@@ -428,11 +501,14 @@ function boot() {
     loadWeather(dateStr);
     try {
       const bust = `&_=${Date.now()}`; // CDNキャッシュを回避して常に最新を取得
-      const reqs = [fetch(`/api/occupancy?date=${dateStr}&range=${mode}${bust}`, { cache: "no-store" }).then((r) => r.json())];
-      if (mode === "week") reqs.push(fetch(`/api/weather?date=${dateStr}&range=week${bust}`, { cache: "no-store" }).then((r) => r.json()).catch(() => null));
-      const [d, wx] = await Promise.all(reqs);
+      const dP = fetch(`/api/occupancy?date=${dateStr}&range=${mode}${bust}`, { cache: "no-store" }).then((r) => r.json());
+      const wxP = mode === "week" ? fetch(`/api/weather?date=${dateStr}&range=week${bust}`, { cache: "no-store" }).then((r) => r.json()).catch(() => null) : null;
+      const cmpVal = $("cmpDate") ? $("cmpDate").value : "";
+      const cP = (mode === "day" && cmpOn && cmpVal) ? fetch(`/api/occupancy?date=${cmpVal}&range=day${bust}`, { cache: "no-store" }).then((r) => r.json()).catch(() => null) : null;
+      const [d, wx, comp] = await Promise.all([dP, wxP, cP]);
       if (d.error) throw new Error(d.error);
       if (mode === "week" && wx && wx.daily) { d.weather = {}; wx.daily.forEach((x) => { d.weather[x.date] = x; }); }
+      if (comp && !comp.error) d.compare = comp;
       current = d;
       renderData(d);
       const jt = new Date(new Date(d.updatedAt).getTime() + 9 * 3600 * 1000), p = (n) => String(n).padStart(2, "0");
@@ -458,8 +534,36 @@ function boot() {
     if (!b || b.dataset.mode === mode) return;
     mode = b.dataset.mode;
     Array.from(seg.children).forEach((x) => x.classList.toggle("on", x === b));
+    updateCmpVisibility();
     load(pick.value);
   });
+
+  // 比較（日ビューのみ）
+  const cmpBtn = $("cmpBtn"), cmpFields = $("cmpFields"), cmpDate = $("cmpDate");
+  cmpDate.max = jstTodayStr();
+  function setCmp(on) {
+    cmpOn = on;
+    cmpBtn.classList.toggle("on", on);
+    cmpBtn.textContent = on ? "比較中" : "＋ 比較";
+    cmpFields.style.display = on ? "inline-flex" : "none";
+  }
+  function updateCmpVisibility() {
+    cmpBtn.style.display = mode === "day" ? "" : "none";
+    cmpFields.style.display = (mode === "day" && cmpOn) ? "inline-flex" : "none";
+  }
+  cmpBtn.addEventListener("click", () => {
+    if (!cmpOn) { if (!cmpDate.value) cmpDate.value = addDaysStr(pick.value, -7); setCmp(true); }
+    else setCmp(false);
+    load(pick.value);
+  });
+  cmpDate.addEventListener("change", () => { if (cmpOn) load(pick.value); });
+  $("cmpOff").addEventListener("click", () => { setCmp(false); load(pick.value); });
+  document.querySelectorAll(".cmp-q[data-off]").forEach((b) => b.addEventListener("click", () => {
+    cmpDate.value = addDaysStr(pick.value, -Number(b.dataset.off));
+    if (!cmpOn) setCmp(true);
+    load(pick.value);
+  }));
+  updateCmpVisibility();
 
   $("refreshBtn").addEventListener("click", () => load(pick.value));
 
@@ -468,7 +572,8 @@ function boot() {
 
   const mo = new MutationObserver(() => {
     if (!current) return;
-    if (current.mode === "month") renderMonthChart(current);
+    if (current.compare) renderCompareChart(current);
+    else if (current.mode === "month") renderMonthChart(current);
     else if (current.mode === "week") renderWeekChart(current);
     else renderChart(current);
   });
