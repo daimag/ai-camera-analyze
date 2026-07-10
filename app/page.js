@@ -8,6 +8,10 @@ const MARKUP = `
       <p class="eyebrow">店舗 入退店アナリティクス</p>
       <h1>入退店ダッシュボード<small>AIカメラ ＋ 公開API による来店計測</small></h1>
     </div>
+    <div class="head-right">
+      <button type="button" id="refreshBtn" class="refresh">↻ 更新</button>
+      <div class="live"><span class="d"></span><span id="liveTxt">読み込み中…</span></div>
+    </div>
   </header>
 
   <section class="strip">
@@ -39,9 +43,6 @@ const MARKUP = `
         <button type="button" data-mode="month">月</button>
       </div>
     </div>
-    <div class="spacer"></div>
-    <button type="button" id="refreshBtn" class="refresh">↻ 更新</button>
-    <div class="live"><span class="d"></span><span id="liveTxt">読み込み中…</span></div>
   </section>
 
   <section class="kpis" id="kpis">
@@ -260,7 +261,7 @@ function boot() {
       const dashPct = (t.dashHour >= 0 && tot) ? Math.round(t.dashIn / tot * 100) : 0;
       const carPct = tot ? Math.round((t.carIn || 0) / tot * 100) : 0;
       const io = `<div class="kpi"><div class="lab"><span class="dot" style="background:var(--in)"></span>総入店 <span style="color:var(--faint)">/</span> <span class="dot" style="background:var(--out)"></span>総退店</div>
-        <div class="val num" style="font-size:25px"><span style="color:var(--in)">${t.in.toLocaleString()}</span> <span style="color:var(--faint)">/</span> <span style="color:var(--out)">${t.out.toLocaleString()}</span></div>
+        <div class="val num" style="font-size:20px"><span style="color:var(--in)">${t.in.toLocaleString()}</span> <span style="color:var(--faint)">/</span> <span style="color:var(--out)">${t.out.toLocaleString()}</span></div>
         <div class="sub">入店 / 退店（人）</div></div>`;
       html =
         io +
