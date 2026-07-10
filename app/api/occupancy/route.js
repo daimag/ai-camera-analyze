@@ -73,21 +73,30 @@ async function fetchCamera(headers, cam, start, end, interval) {
 
 const CACHE = { headers: { "Cache-Control": "no-store, max-age=0" } };
 
-// 日単位（時間帯別）
-async function getDay(headers, date) {
+// 日単位（時間帯別／15分粒度）
+async function getDay(headers, date, gran) {
+  const fine = gran === "15min";
   const [start, end] = dayRange(date);
+  const interval = fine ? "15_minutes" : "1_hour";
   const hourly = Array.from({ length: 24 }, (_, h) => ({ h, in: 0, out: 0 }));
   const cameras = [];
   let totalIn = 0, totalOut = 0;
 
-  const results = await Promise.all(CAMERAS.map((c) => fetchCamera(headers, c, start, end, "1_hour")));
+  const camHourIn = CAMERAS.map(() => Array(24).fill(0));
+  const camQIn = fine ? CAMERAS.map(() => Array(96).fill(0)) : null;
+  const qIO = fine ? Array.from({ length: 96 }, () => [0, 0]) : null;
+
+  const results = await Promise.all(CAMERAS.map((c) => fetchCamera(headers, c, start, end, interval)));
   results.forEach((r, i) => {
     cameras.push({ name: CAMERAS[i].name, in: r.in, out: r.out });
     totalIn += r.in; totalOut += r.out;
     for (const ts in r.buckets) {
-      const h = Math.floor(((Number(ts) + JST_OFFSET) % 86400) / 3600);
+      const sec = (Number(ts) + JST_OFFSET) % 86400;
+      const h = Math.floor(sec / 3600);
       hourly[h].in += r.buckets[ts][0];
       hourly[h].out += r.buckets[ts][1];
+      camHourIn[i][h] += r.buckets[ts][0];
+      if (fine) { const q = Math.floor(sec / 900); qIO[q][0] += r.buckets[ts][0]; qIO[q][1] += r.buckets[ts][1]; camQIn[i][q] += r.buckets[ts][0]; }
     }
   });
   let run = 0, peak = 0, personHours = 0;
@@ -95,31 +104,36 @@ async function getDay(headers, date) {
   cameras.sort((a, b) => b.in - a.in);
 
   // 追加指標
-  const current = Math.max(0, totalIn - totalOut);              // 現在（今日）/終値 店内人数
-  const dwellMin = totalIn ? Math.round((personHours / totalIn) * 60) : 0; // 平均滞在(推定・分)
-  let dashHour = -1, dashIn = 0;                                 // 朝一ピーク（開店ダッシュ）
+  const current = Math.max(0, totalIn - totalOut);
+  const dwellMin = totalIn ? Math.round((personHours / totalIn) * 60) : 0;
+  let dashHour = -1, dashIn = 0;
   for (const row of hourly) { if (row.h <= 11 && row.in > dashIn) { dashIn = row.in; dashHour = row.h; } }
-  const carCam = cameras.find((c) => c.name.includes("立体駐車場")); // 車客＝駐車場入口
+  const carCam = cameras.find((c) => c.name.includes("立体駐車場"));
   const carIn = carCam ? carCam.in : 0;
   const walkIn = Math.max(0, totalIn - carIn);
 
-  // カメラ別の時間帯内訳（入店）— 入店総数の多い順（cameras）に整列
   const order = cameras.map((c) => c.name);
   const nameToIdx = {}; CAMERAS.forEach((c, i) => { nameToIdx[c.name] = i; });
-  const camHourIn = CAMERAS.map(() => Array(24).fill(0));
-  results.forEach((r, i) => {
-    for (const ts in r.buckets) {
-      const h = Math.floor(((Number(ts) + JST_OFFSET) % 86400) / 3600);
-      camHourIn[i][h] += r.buckets[ts][0];
-    }
-  });
   for (const row of hourly) row.cams = order.map((nm) => camHourIn[nameToIdx[nm]][row.h]);
 
-  return {
-    mode: "day", date, updatedAt: new Date().toISOString(),
+  const resp = {
+    mode: "day", date, gran: fine ? "15min" : "hour", updatedAt: new Date().toISOString(),
     totals: { in: totalIn, out: totalOut, peak, current, dwellMin, dashHour, dashIn, carIn, walkIn },
     hourly, cameras, camNames: order,
   };
+
+  if (fine) {
+    let qrun = 0; const quarters = [];
+    for (let q = 0; q < 96; q++) {
+      qrun += qIO[q][0] - qIO[q][1];
+      const hh = Math.floor(q / 4), mm = (q % 4) * 15;
+      quarters.push({ q, t: start + q * 900, label: `${hh}:${String(mm).padStart(2, "0")}`, h: hh, min: mm, in: qIO[q][0], out: qIO[q][1], stay: Math.max(0, qrun), cams: order.map((nm) => camQIn[nameToIdx[nm]][q]) });
+    }
+    let pk = null; for (const s of quarters) { if (!pk || s.in > pk.in) pk = s; }
+    resp.quarters = quarters;
+    resp.peak15 = pk && pk.in ? { label: pk.label, in: pk.in } : null;
+  }
+  return resp;
 }
 
 // 週単位（曜日別・月曜始まり）— 月と同じ 1_day 方式で統一（Verkadaウィジェットと一致）
@@ -215,7 +229,7 @@ export async function GET(request) {
 
     const payload = range === "month" ? await getMonth(headers, date)
       : range === "week" ? await getWeek(headers, date)
-      : await getDay(headers, date);
+      : await getDay(headers, date, sp.get("gran"));
     return Response.json(payload, CACHE);
   } catch (e) {
     return Response.json({ error: String(e && e.message ? e.message : e) }, { status: 500 });

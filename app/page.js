@@ -56,6 +56,10 @@ const MARKUP = `
     <div class="h">
       <h2 id="chartTitle">時間帯別 入退店 ＆ 店内滞在</h2>
       <div class="ctools" id="ctools">
+        <div class="seg gran-seg" id="granSeg">
+          <button type="button" data-g="hour" class="on">1時間</button>
+          <button type="button" data-g="15min">15分</button>
+        </div>
         <button type="button" id="cmpBtn" class="cmp-btn">＋ 比較</button>
         <span class="cmp-fields" id="cmpFields" style="display:none">
           <input type="date" id="cmpDate" class="cmp-date">
@@ -195,6 +199,7 @@ function boot() {
     return s;
   };
   let cmpOn = false;
+  let gran = "hour"; // hour | 15min（日ビューの粒度）
   const addDaysStr = (ds, n) => { const [y, m, d] = ds.split("-").map(Number); return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10); };
   const mdDow = (ds) => { const [y, m, d] = ds.split("-").map(Number); const w = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); return `${m}/${d}（${DOW[w]}）`; };
   const jstNow = () => new Date(Date.now() + 9 * 3600 * 1000);
@@ -298,8 +303,11 @@ function boot() {
       $("chartHint").textContent = `${d.weekStart} 〜 ${d.weekEnd}`;
       $("legend").innerHTML = camLeg + out;
     } else {
-      $("chartTitle").textContent = "時間帯別 入退店 ＆ 店内滞在";
-      $("chartHint").textContent = "1時間単位・JST（入店はカメラ別に色分け）";
+      const fine = d.gran === "15min";
+      $("chartTitle").textContent = fine ? "15分粒度 入退店 ＆ 店内滞在" : "時間帯別 入退店 ＆ 店内滞在";
+      $("chartHint").innerHTML = fine
+        ? (d.peak15 ? `最混雑 <b style="color:var(--accent)">${d.peak15.label}〜</b> 入店 ${d.peak15.in}人／15分` : "15分単位・JST")
+        : "1時間単位・JST（入店はカメラ別に色分け）";
       $("legend").innerHTML = camLeg + out + '<span><i class="ln"></i>店内滞在（推定・右軸）</span>';
     }
   }
@@ -484,12 +492,51 @@ function boot() {
     $("hchart").innerHTML = s;
   }
 
+  function renderFineChart(d) {
+    const host = $("chartHost");
+    const all = d.quarters;
+    const act = all.filter((r) => r.in || r.out);
+    if (!act.length) { host.innerHTML = '<div class="state">この日のデータはまだありません（休業日、または営業前）。</div>'; return; }
+    host.innerHTML = '<svg id="hchart" viewBox="0 0 960 380" role="img" aria-label="15分粒度グラフ"></svg>';
+    const loQ = Math.max(0, act[0].q - 2), hiQ = Math.min(95, act[act.length - 1].q + 2);
+    const view = all.filter((r) => r.q >= loQ && r.q <= hiQ);
+    const W = 960, H = 380, m = { t: 30, r: 56, b: 44, l: 52 }, iw = W - m.l - m.r, ih = H - m.t - m.b;
+    const maxBar = Math.max(1, ...view.map((r) => Math.max(r.in, r.out)));
+    const maxStay = Math.max(1, ...view.map((r) => r.stay));
+    const yBar = (v) => m.t + ih - (v / maxBar) * ih, yStay = (v) => m.t + ih - (v / maxStay) * ih;
+    const n = view.length, slot = iw / n, gap = slot * 0.14, bw = (slot - gap * 2) / 2;
+    const cOut = css("--out"), cStay = css("--stay"), cIn = css("--in");
+    const nowSec = Math.floor(Date.now() / 1000);
+    const isToday = d.date === jstTodayStr();
+    const curQ = isToday ? view.find((r) => nowSec >= r.t && nowSec < r.t + 900) : null;
+    const peakQ = view.reduce((a, b) => (b.in > a.in ? b : a), view[0]);
+    let s = ""; const ticks = 4;
+    for (let t = 0; t <= ticks; t++) { const val = Math.round(maxBar * t / ticks), y = yBar(val);
+      s += `<line class="grid" x1="${m.l}" y1="${y.toFixed(1)}" x2="${m.l + iw}" y2="${y.toFixed(1)}"/>`;
+      s += `<text class="axis" x="${m.l - 8}" y="${(y + 4).toFixed(1)}" text-anchor="end">${val}</text>`; }
+    for (let t = 0; t <= ticks; t++) { const val = Math.round(maxStay * t / ticks), y = yStay(val);
+      s += `<text class="axis" x="${m.l + iw + 8}" y="${(y + 4).toFixed(1)}" text-anchor="start" style="fill:${cStay}">${val}</text>`; }
+    s += `<line class="baseline" x1="${m.l}" y1="${m.t + ih}" x2="${m.l + iw}" y2="${m.t + ih}"/>`;
+    view.forEach((r, idx) => {
+      const x0 = m.l + slot * idx + gap, cur = curQ && r.q === curQ.q;
+      const inBar = stackBar(x0, bw, r.cams, yBar);
+      const outBar = `<rect x="${(x0 + bw).toFixed(1)}" y="${yBar(r.out).toFixed(1)}" width="${bw.toFixed(1)}" height="${(m.t + ih - yBar(r.out)).toFixed(1)}" fill="${cOut}"/>`;
+      s += (cur ? '<g opacity="0.42">' : "") + inBar + outBar + (cur ? "</g>" : "");
+      if (r.min === 0) s += `<text class="axis-t" x="${(x0 + bw).toFixed(1)}" y="${H - m.b + 18}" text-anchor="middle">${r.h}時</text>`;
+      if (r === peakQ && r.in) s += `<text x="${(x0 + bw).toFixed(1)}" y="${(Math.min(yBar(r.in), yBar(r.out)) - 6).toFixed(1)}" text-anchor="middle" style="fill:var(--accent);font-size:10px;font-weight:800">ピーク</text>`;
+    });
+    const pts = view.map((r, idx) => [m.l + slot * idx + slot / 2, yStay(r.stay)]);
+    s += `<polyline fill="none" stroke="${cStay}" stroke-width="2.2" stroke-linejoin="round" points="${pts.map((p) => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ")}"/>`;
+    $("hchart").innerHTML = s;
+  }
+
   function renderData(d) {
     renderHead(d);
     renderKpis(d);
     if (d.compare) renderCompareChart(d);
     else if (d.mode === "month") renderMonthChart(d);
     else if (d.mode === "week") renderWeekChart(d);
+    else if (d.gran === "15min" && d.quarters) renderFineChart(d);
     else renderChart(d);
     renderEntrances(d);
   }
@@ -502,7 +549,8 @@ function boot() {
     loadWeather(dateStr);
     try {
       const bust = `&_=${Date.now()}`; // CDNキャッシュを回避して常に最新を取得
-      const dP = fetch(`/api/occupancy?date=${dateStr}&range=${mode}${bust}`, { cache: "no-store" }).then((r) => r.json());
+      const granQ = mode === "day" ? `&gran=${gran}` : "";
+      const dP = fetch(`/api/occupancy?date=${dateStr}&range=${mode}${granQ}${bust}`, { cache: "no-store" }).then((r) => r.json());
       const wxP = mode === "week" ? fetch(`/api/weather?date=${dateStr}&range=week${bust}`, { cache: "no-store" }).then((r) => r.json()).catch(() => null) : null;
       const cmpVal = $("cmpDate") ? $("cmpDate").value : "";
       const cP = (mode === "day" && cmpOn && cmpVal) ? fetch(`/api/occupancy?date=${cmpVal}&range=day${bust}`, { cache: "no-store" }).then((r) => r.json()).catch(() => null) : null;
@@ -551,7 +599,16 @@ function boot() {
   function updateCmpVisibility() {
     cmpBtn.style.display = mode === "day" ? "" : "none";
     cmpFields.style.display = (mode === "day" && cmpOn) ? "inline-flex" : "none";
+    $("granSeg").style.display = mode === "day" ? "inline-flex" : "none";
   }
+  const granSeg = $("granSeg");
+  granSeg.addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b || b.dataset.g === gran) return;
+    gran = b.dataset.g;
+    Array.from(granSeg.children).forEach((x) => x.classList.toggle("on", x === b));
+    load(pick.value);
+  });
   cmpBtn.addEventListener("click", () => {
     if (!cmpOn) { if (!cmpDate.value) cmpDate.value = addDaysStr(pick.value, -7); setCmp(true); }
     else setCmp(false);
@@ -576,6 +633,7 @@ function boot() {
     if (current.compare) renderCompareChart(current);
     else if (current.mode === "month") renderMonthChart(current);
     else if (current.mode === "week") renderWeekChart(current);
+    else if (current.gran === "15min" && current.quarters) renderFineChart(current);
     else renderChart(current);
   });
   mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
