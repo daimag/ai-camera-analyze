@@ -116,10 +116,35 @@ async function getDay(headers, date, gran) {
   const nameToIdx = {}; CAMERAS.forEach((c, i) => { nameToIdx[c.name] = i; });
   for (const row of hourly) row.cams = order.map((nm) => camHourIn[nameToIdx[nm]][row.h]);
 
+  // ===== Step1 分析サマリー（全て hourly から算出／公開APIのみ） =====
+  // ③ 夕方ラッシュ指数（17-19時の入店割合）
+  const eveIn = hourly.filter((r) => r.h >= 17 && r.h <= 19).reduce((a, b) => a + b.in, 0);
+  const evePct = totalIn ? Math.round(eveIn / totalIn * 100) : 0;
+  // ④ 二峰性（朝ピーク＋夕ピーク）
+  const mPeak = hourly.filter((r) => r.h <= 12).reduce((a, b) => (b.in > a.in ? b : a), { in: 0, h: -1 });
+  const ePeak = hourly.filter((r) => r.h >= 15).reduce((a, b) => (b.in > a.in ? b : a), { in: 0, h: -1 });
+  const twoPeak = mPeak.in > 0 && ePeak.in >= mPeak.in * 0.4 && (ePeak.h - mPeak.h) >= 4;
+  // ⑤ 入口別クセ（朝／夕の主入口）
+  const topCam = (lo, hi) => {
+    const sums = order.map(() => 0);
+    for (const row of hourly) if (row.h >= lo && row.h <= hi) row.cams.forEach((v, i) => { sums[i] += v; });
+    let mi = 0; sums.forEach((v, i) => { if (v > sums[mi]) mi = i; });
+    return { name: order[mi] || "", in: sums[mi] || 0 };
+  };
+  const morningTop = topCam(0, 11), eveningTop = topCam(15, 23);
+  // ⑥ 機会損失（営業中に退店が入店を最も上回る時間＝空き台不足/見切りの目安）
+  let churnHour = -1, churnGap = 0; // 昼間帯のみ（閉店前の帰宅ラッシュを除外）
+  for (const row of hourly) { if (row.h >= 10 && row.h <= 18 && row.stay > 0) { const g = row.out - row.in; if (g > churnGap) { churnGap = g; churnHour = row.h; } } }
+  const insights = {
+    evePct, eveIn, twoPeak,
+    mPeak: { h: mPeak.h, in: mPeak.in }, ePeak: { h: ePeak.h, in: ePeak.in },
+    morningTop, eveningTop, churnHour, churnGap,
+  };
+
   const resp = {
     mode: "day", date, gran: fine ? "15min" : "hour", updatedAt: new Date().toISOString(),
     totals: { in: totalIn, out: totalOut, peak, current, dwellMin, dashHour, dashIn, carIn, walkIn },
-    hourly, cameras, camNames: order,
+    hourly, cameras, camNames: order, insights,
   };
 
   if (fine) {

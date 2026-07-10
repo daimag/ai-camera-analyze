@@ -93,6 +93,13 @@ svg{display:block;width:100%;height:auto;min-width:520px}
 .grid{stroke:var(--line);stroke-width:1}
 .baseline{stroke:var(--line-strong);stroke-width:1.5}
 
+.ins{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:8px}
+.ins-item{background:var(--panel-2);border:1px solid var(--line);border-radius:11px;padding:13px 15px}
+.ins-item .t{font-size:12px;color:var(--muted);font-weight:600;display:flex;gap:6px;align-items:center}
+.ins-item .v{font-size:17px;font-weight:800;margin:5px 0 3px;line-height:1.25}
+.ins-item .v .em{color:var(--accent)}
+.ins-item .x{font-size:11.5px;color:var(--faint);line-height:1.45}
+@media (max-width:640px){.ins{grid-template-columns:1fr}}
 .means{margin:12px 0 4px}
 .means-bar{display:flex;height:15px;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
 .means-bar .car{background:var(--accent)}

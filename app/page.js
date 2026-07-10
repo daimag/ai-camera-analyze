@@ -74,6 +74,11 @@ const MARKUP = `
     <div id="chartHost" class="chart-scroll"><svg id="hchart" viewBox="0 0 960 380" role="img" aria-label="グラフ"></svg></div>
   </section>
 
+  <section class="card" id="insCard">
+    <div class="h"><h2>分析サマリー</h2><span class="hint">この日の傾向（Step1）</span></div>
+    <div class="ins" id="insights"></div>
+  </section>
+
   <section class="card">
     <div class="h"><h2>入口（カメラ）別 入店数</h2><span class="hint">People Counting Line 横断数</span></div>
     <div class="ent" id="entrances"></div>
@@ -530,9 +535,32 @@ function boot() {
     $("hchart").innerHTML = s;
   }
 
+  function renderInsights(d) {
+    const card = $("insCard");
+    if (d.mode !== "day" || !d.insights) { card.style.display = "none"; return; }
+    card.style.display = "";
+    const ins = d.insights, H = (x) => `${x}時`;
+    const item = (icon, t, v, x) => `<div class="ins-item"><div class="t">${icon} ${t}</div><div class="v">${v}</div><div class="x">${x}</div></div>`;
+    // ④ 来店パターン
+    const pat = ins.twoPeak ? "二峰型（朝＋夕）" : (ins.mPeak.in ? "朝一集中型" : "—");
+    const patSub = ins.mPeak.in ? `朝ピーク ${H(ins.mPeak.h)} ${ins.mPeak.in}人 ／ 夕ピーク ${ins.ePeak.in ? H(ins.ePeak.h) + " " + ins.ePeak.in + "人" : "なし"}` : "データ待ち";
+    // ⑤ 入口別クセ
+    const mt = shortCam(ins.morningTop.name || ""), et = shortCam(ins.eveningTop.name || "");
+    const doorV = (mt && et && mt !== et) ? `朝 <span class="em">${mt}</span> → 夕 <span class="em">${et}</span>` : (mt ? `終日 <span class="em">${mt}</span>中心` : "—");
+    const doorX = (mt && et && mt !== et) ? "時間帯で主入口＝客層が変化" : "主入口は終日ほぼ一定";
+    // ⑥ 機会損失
+    const churnV = ins.churnHour >= 0 ? `${H(ins.churnHour)}（退店−入店 +${ins.churnGap}）` : "目立つ超過なし";
+    document.getElementById("insights").innerHTML =
+      item("🌆", "夕方ラッシュ指数", `${ins.evePct}<span class="u" style="font-size:12px;color:var(--muted)">%</span>`, `17〜19時の入店 ${ins.eveIn.toLocaleString()}人（夜型度の指標）`) +
+      item("⛰️", "来店パターン", pat, patSub) +
+      item("🚪", "入口の時間差", doorV, doorX) +
+      item("⚠️", "退店超過ピーク", churnV, "空き台不足・見切りの目安（機会損失）");
+  }
+
   function renderData(d) {
     renderHead(d);
     renderKpis(d);
+    renderInsights(d);
     if (d.compare) renderCompareChart(d);
     else if (d.mode === "month") renderMonthChart(d);
     else if (d.mode === "week") renderWeekChart(d);
