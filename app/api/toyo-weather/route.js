@@ -1,0 +1,95 @@
+// app/api/weather/route.js
+// 広島市（東洋商事）の天気を Open-Meteo から取得（APIキー不要）。
+
+export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
+export const revalidate = 0;
+
+const LAT = 34.3853;   // 広島市中区付近
+const LON = 132.4553;
+
+const WMO = {
+  0: ["快晴", "☀️"], 1: ["晴れ", "🌤️"], 2: ["薄曇り", "⛅"], 3: ["曇り", "☁️"],
+  45: ["霧", "🌫️"], 48: ["霧氷", "🌫️"],
+  51: ["弱い霧雨", "🌦️"], 53: ["霧雨", "🌦️"], 55: ["強い霧雨", "🌧️"],
+  61: ["弱い雨", "🌦️"], 63: ["雨", "🌧️"], 65: ["強い雨", "🌧️"],
+  66: ["着氷性の雨", "🌧️"], 67: ["強い着氷性の雨", "🌧️"],
+  71: ["弱い雪", "🌨️"], 73: ["雪", "🌨️"], 75: ["強い雪", "❄️"], 77: ["霧雪", "🌨️"],
+  80: ["にわか雨", "🌦️"], 81: ["にわか雨", "🌧️"], 82: ["激しいにわか雨", "⛈️"],
+  85: ["にわか雪", "🌨️"], 86: ["強いにわか雪", "❄️"],
+  95: ["雷雨", "⛈️"], 96: ["雹を伴う雷雨", "⛈️"], 99: ["激しい雷雨", "⛈️"],
+};
+
+function jstTodayStr() {
+  return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+}
+function addDays(dateStr, n) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+}
+function dow(dateStr) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+function wmo(code) { return WMO[code] || ["--", "🌡️"]; }
+
+export async function GET(request) {
+  try {
+    const sp = new URL(request.url).searchParams;
+    const q = sp.get("date") || "";
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(q) ? q : jstTodayStr();
+
+    // 週モード：月曜〜日曜の7日分を返す
+    if (sp.get("range") === "week") {
+      const monday = addDays(date, -(((dow(date) + 6) % 7)));
+      const sunday = addDays(monday, 6);
+      const qw = new URLSearchParams({
+        latitude: String(LAT), longitude: String(LON),
+        daily: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum",
+        timezone: "Asia/Tokyo", start_date: monday, end_date: sunday,
+      });
+      const rw = await fetch(`https://api.open-meteo.com/v1/forecast?${qw}`, { cache: "no-store" });
+      if (!rw.ok) throw new Error(`weather取得失敗 HTTP ${rw.status}`);
+      const dw = await rw.json();
+      const times = dw.daily?.time || [];
+      const daily = times.map((t, i) => {
+        const [desc, emoji] = wmo(dw.daily.weather_code[i]);
+        return { date: t, dow: dow(t), code: dw.daily.weather_code[i], desc, emoji,
+          tmax: dw.daily.temperature_2m_max[i], tmin: dw.daily.temperature_2m_min[i],
+          precip: dw.daily.precipitation_sum[i] };
+      });
+      return Response.json({ mode: "week", weekStart: monday, weekEnd: sunday, daily },
+        { headers: { "Cache-Control": "s-maxage=900, stale-while-revalidate=1800" } });
+    }
+
+    const isToday = date === jstTodayStr();
+
+    const qs = new URLSearchParams({
+      latitude: String(LAT), longitude: String(LON),
+      daily: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum",
+      timezone: "Asia/Tokyo", start_date: date, end_date: date,
+    });
+    if (isToday) qs.set("current", "temperature_2m,weather_code");
+
+    const r = await fetch(`https://api.open-meteo.com/v1/forecast?${qs}`, { cache: "no-store" });
+    if (!r.ok) throw new Error(`weather取得失敗 HTTP ${r.status}`);
+    const d = await r.json();
+
+    const code = d.daily?.weather_code?.[0];
+    const [desc, emoji] = WMO[code] || ["--", "🌡️"];
+    const out = {
+      date,
+      tmax: d.daily?.temperature_2m_max?.[0] ?? null,
+      tmin: d.daily?.temperature_2m_min?.[0] ?? null,
+      precip: d.daily?.precipitation_sum?.[0] ?? null,
+      code, desc, emoji,
+    };
+    if (isToday && d.current) {
+      const [cdesc, cemoji] = WMO[d.current.weather_code] || [desc, emoji];
+      out.current = { temp: d.current.temperature_2m, desc: cdesc, emoji: cemoji };
+    }
+    return Response.json(out, { headers: { "Cache-Control": "s-maxage=900, stale-while-revalidate=1800" } });
+  } catch (e) {
+    return Response.json({ error: String(e && e.message ? e.message : e) }, { status: 500 });
+  }
+}
