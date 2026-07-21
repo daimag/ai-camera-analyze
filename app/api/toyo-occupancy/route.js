@@ -17,13 +17,14 @@ const ALL_CAMERAS = [
   { id: "da629d13-eee1-4fd2-add8-321b2453fa50", name: "正面玄関",         site: "河原町店", preset: "bcdf437a-3a1e-4d53-8ab5-46b770801b90" },
   { id: "01e00fb3-6d51-49ad-9955-7891a4121ceb", name: "エレベーターホール", site: "河原町店", preset: "bafc1163-2640-4163-a7ed-1c4cbac319a3" },
 ];
-const SITE_SHORT = { "五日市店": "五日市", "河原町店": "河原町" };
+const SITE_SHORT = { "五日市店": "I", "河原町店": "K" };
 
-function pickCameras(site) {
-  const all = site === "all" || !site;
+// code は "I"|"K"|"all"（実店名は外部に出さない）
+function pickCameras(code) {
+  const all = code === "all" || !code;
   return ALL_CAMERAS
-    .filter((c) => all || c.site === site)
-    .map((c) => ({ ...c, label: all ? `${SITE_SHORT[c.site]}·${c.name}` : c.name }));
+    .filter((c) => all || SITE_SHORT[c.site] === code)
+    .map((c) => ({ ...c, code: SITE_SHORT[c.site], label: all ? `${SITE_SHORT[c.site]}·${c.name}` : c.name }));
 }
 
 const JST_OFFSET = 9 * 3600;
@@ -92,7 +93,7 @@ async function getDay(headers, CAMERAS, date, gran) {
 
   const results = await Promise.all(CAMERAS.map((c) => fetchCamera(headers, c, start, end, interval)));
   results.forEach((r, i) => {
-    cameras.push({ name: CAMERAS[i].label, site: CAMERAS[i].site, in: r.in, out: r.out });
+    cameras.push({ name: CAMERAS[i].label, site: CAMERAS[i].code, in: r.in, out: r.out });
     totalIn += r.in; totalOut += r.out;
     for (const ts in r.buckets) {
       const sec = (Number(ts) + JST_OFFSET) % 86400;
@@ -179,7 +180,7 @@ async function getSpan(headers, CAMERAS, mode, date) {
   const daily = [], idxByDate = {};
   buildDays().forEach((ds) => { idxByDate[ds] = daily.length; daily.push({ date: ds, dow: dowOf(ds), in: 0, out: 0 }); });
   const results = await Promise.all(CAMERAS.map((c) => fetchCamera(headers, c, start, end, "1_day")));
-  const camTot = CAMERAS.map((c) => ({ name: c.label, site: c.site, in: 0, out: 0 }));
+  const camTot = CAMERAS.map((c) => ({ name: c.label, site: c.code, in: 0, out: 0 }));
   const camDayIn = {};
   let totalIn = 0, totalOut = 0;
   results.forEach((r, ci) => {
@@ -216,7 +217,7 @@ export async function GET(request) {
     const date = /^\d{4}-\d{2}-\d{2}$/.test(q) ? q : jstTodayStr();
     const range = ["day", "week", "month"].includes(sp.get("range")) ? sp.get("range") : "day";
     const siteQ = sp.get("site");
-    const site = ["五日市店", "河原町店"].includes(siteQ) ? siteQ : "all";
+    const site = ["I", "K"].includes(siteQ) ? siteQ : "all";
     const CAMERAS = pickCameras(site);
 
     const token = await getToken(key);

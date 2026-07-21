@@ -5,8 +5,8 @@ const MARKUP = `
 <div class="wrap">
   <header class="masthead">
     <div>
-      <p class="eyebrow">東洋商事 入退店アナリティクス</p>
-      <h1>入退店ダッシュボード<small>五日市店・河原町店／AIカメラ ＋ 公開API による来店計測</small></h1>
+      <p class="eyebrow">T商事 入退店アナリティクス</p>
+      <h1>入退店ダッシュボード<small>I店・K店／AIカメラ ＋ 公開API による来店計測</small></h1>
     </div>
     <div class="head-right">
       <button type="button" id="refreshBtn" class="refresh">↻ 更新</button>
@@ -19,8 +19,8 @@ const MARKUP = `
       <span class="k">店舗</span>
       <div class="seg" id="siteSeg">
         <button type="button" data-site="all" class="on">合算</button>
-        <button type="button" data-site="五日市店">五日市</button>
-        <button type="button" data-site="河原町店">河原町</button>
+        <button type="button" data-site="I">I店</button>
+        <button type="button" data-site="K">K店</button>
       </div>
     </div>
     <div class="chip picker">
@@ -195,7 +195,7 @@ function boot() {
   const $ = (id) => document.getElementById(id);
   let current = null;
   let mode = "day";
-  let site = "all"; // all | 五日市店 | 河原町店
+  let site = "all"; // all | I | K
   const timers = [];
   // カメラ別の色（入店総数の多い順＝立体駐車場を緑に）
   const CAM_COLORS = ["#2f9e6f", "#3a7bd5", "#8a63d2", "#e0912f", "#d5638a"];
